@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemeinsame Task-Liste</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin: 0; padding: 20px; min-height: 100vh; }
+        .container { max-width: 700px; margin: 0 auto; background: white; border-radius: 16px; padding: 2rem; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        h1 { margin-top: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .setup-box { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 1.5rem; }
+        .setup-box h3 { margin: 0 0 12px 0; color: #92400e; }
+        .setup-field { margin-bottom: 12px; }
+        .setup-field label { display: block; font-size: 12px; font-weight: 600; color: #92400e; margin-bottom: 4px; }
+        .setup-field input { width: 100%; padding: 10px; border: 1px solid #fcd34d; border-radius: 6px; font-family: monospace; font-size: 12px; }
+        .setup-btn { background: #d97706; color: white; padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
+        .setup-btn:hover { background: #b45309; }
+        .app-box { display: none; }
+        .section { margin-bottom: 2rem; padding-bottom: 2rem; border-bottom: 1px solid #eee; }
+        .label { font-size: 12px; color: #999; font-weight: 600; text-transform: uppercase; margin-bottom: 8px; }
+        input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; }
+        input[type="text"]:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+        .input-group { display: flex; gap: 8px; }
+        .input-group input { flex: 1; }
+        .add-btn { padding: 12px 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; }
+        .add-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+        .tasks { display: flex; flex-direction: column; gap: 12px; }
+        .task-item { background: #fafafa; border: 1px solid #eee; border-radius: 10px; padding: 1.25rem; }
+        .task-item:hover { border-color: #ddd; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .task-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .task-text { font-size: 16px; font-weight: 600; color: #222; }
+        .task-meta { font-size: 13px; color: #999; margin-top: 4px; }
+        .delete-btn { background: none; color: #ccc; border: none; cursor: pointer; padding: 0; font-size: 24px; width: 32px; height: 32px; }
+        .delete-btn:hover { color: #999; }
+        .progress-bar { width: 100%; height: 4px; background: #eee; border-radius: 2px; margin: 10px 0; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); }
+        .badge { display: inline-block; padding: 4px 10px; background: #e0e7ff; color: #5a67d8; border-radius: 6px; font-size: 12px; font-weight: 500; margin-right: 6px; margin-bottom: 6px; }
+        .confirm-btn { padding: 8px 16px; background: white; border: 1px solid #ddd; border-radius: 6px; color: #666; font-weight: 500; font-size: 13px; cursor: pointer; }
+        .confirm-btn:hover { background: #f9f9f9; }
+        .confirm-btn.confirmed { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-color: transparent; }
+        .empty { text-align: center; color: #999; padding: 2rem; }
+        .status { font-size: 12px; color: #999; text-align: center; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✓ Gemeinsame Task-Liste</h1>
+        <div class="setup-box" id="setupBox">
+            <h3>⚙️ Supabase verbinden</h3>
+            <div class="setup-field">
+                <label>Supabase Project URL:</label>
+                <input type="text" id="supaUrl" placeholder="https://xxxxx.supabase.co" />
+            </div>
+            <div class="setup-field">
+                <label>Supabase Public Key (sb_publishable_...):</label>
+                <input type="text" id="supaKey" placeholder="sb_publishable_..." />
+            </div>
+            <button class="setup-btn" id="connectBtn">Verbinden</button>
+        </div>
+        <div class="app-box" id="appBox">
+            <div class="section">
+                <div class="label">Dein Name</div>
+                <input type="text" id="userName" placeholder="Dein Name..." />
+            </div>
+            <div class="section">
+                <div class="input-group">
+                    <input type="text" id="taskInput" placeholder="Neue Task..." />
+                    <button class="add-btn" id="addBtn">Hinzufügen</button>
+                </div>
+            </div>
+            <div id="taskList" class="tasks"></div>
+            <div class="empty" id="emptyMsg">Noch keine Tasks</div>
+            <div class="status" id="status">Lädt...</div>
+        </div>
+    </div>
+    <script>
+        let supabaseClient = null;
+        let currentUser = localStorage.getItem('taskListUser') || '';
+        let tasks = [];
+        document.getElementById('connectBtn').addEventListener('click', connect);
+        function connect() {
+            const url = document.getElementById('supaUrl').value.trim();
+            const key = document.getElementById('supaKey').value.trim();
+            if (!url || !key) {
+                alert('Bitte beide Felder ausfüllen');
+                return;
+            }
+            try {
+                const { createClient } = window.supabase;
+                supabaseClient = createClient(url, key);
+                document.getElementById('setupBox').style.display = 'none';
+                document.getElementById('appBox').style.display = 'block';
+                document.getElementById('userName').value = currentUser;
+                localStorage.setItem('taskListUrl', url);
+                localStorage.setItem('taskListKey', key);
+                startApp();
+            } catch (error) {
+                alert('Fehler: ' + error.message);
+            }
+        }
+        function startApp() {
+            const userInput = document.getElementById('userName');
+            const taskInput = document.getElementById('taskInput');
+            const addBtn = document.getElementById('addBtn');
+            userInput.addEventListener('change', () => {
+                currentUser = userInput.value.trim();
+                if (currentUser) {
+                    localStorage.setItem('taskListUser', currentUser);
+                }
+            });
+            addBtn.addEventListener('click', addTask);
+            taskInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') addTask();
+            });
+            loadTasks();
+            setInterval(loadTasks, 2000);
+        }
+        async function addTask() {
+            const text = document.getElementById('taskInput').value.trim();
+            if (!text) return;
+            if (!currentUser) {
+                alert('Gib deinen Namen ein');
+                return;
+            }
+            try {
+                const { error } = await supabaseClient.from('tasks').insert({
+                    text: text,
+                    added_by: currentUser,
+                    confirmed_by: []
+                });
+                if (error) throw error;
+                document.getElementById('taskInput').value = '';
+                loadTasks();
+            } catch (error) {
+                alert('Fehler: ' + error.message);
+            }
+        }
+        async function confirmTask(id, task) {
+            if (!currentUser) {
+                alert('Gib deinen Namen ein');
+                return;
+            }
+            try {
+                let confirmed = task.confirmed_by || [];
+                const idx = confirmed.indexOf(currentUser);
+                if (idx === -1) {
+                    confirmed.push(currentUser);
+                } else {
+                    confirmed.splice(idx, 1);
+                }
+                const { error } = await supabaseClient.from('tasks').update({ confirmed_by: confirmed }).eq('id', id);
+                if (error) throw error;
+                loadTasks();
+            } catch (error) {
+                alert('Fehler: ' + error.message);
+            }
+        }
+        async function deleteTask(id) {
+            try {
+                const { error } = await supabaseClient.from('tasks').delete().eq('id', id);
+                if (error) throw error;
+                loadTasks();
+            } catch (error) {
+                alert('Fehler: ' + error.message);
+            }
+        }
+        async function loadTasks() {
+            if (!supabaseClient) return;
+            try {
+                const { data, error } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: false });
+                if (error) throw error;
+                tasks = data || [];
+                render();
+                document.getElementById('status').textContent = '✓ Aktuell';
+                document.getElementById('status').style.color = '#22c55e';
+            } catch (error) {
+                document.getElementById('status').textContent = '⚠ Fehler';
+                document.getElementById('status').style.color = '#ef4444';
+            }
+        }
+        function render() {
+            const listEl = document.getElementById('taskList');
+            const emptyEl = document.getElementById('emptyMsg');
+            listEl.innerHTML = '';
+            if (tasks.length === 0) {
+                emptyEl.style.display = 'block';
+                return;
+            }
+            emptyEl.style.display = 'none';
+            const allUsers = new Set();
+            tasks.forEach(t => {
+                allUsers.add(t.added_by);
+                (t.confirmed_by || []).forEach(u => allUsers.add(u));
+            });
+            const totalUsers = Math.max(allUsers.size, 1);
+            tasks.forEach(task => {
+                const isConfirmed = (task.confirmed_by || []).includes(currentUser);
+                const percent = Math.round((task.confirmed_by?.length || 0) / totalUsers * 100);
+                const time = new Date(task.added_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                const item = document.createElement('div');
+                item.className = 'task-item';
+                item.innerHTML = `<div class="task-header"><div><div class="task-text">${task.text}</div><div class="task-meta">von <strong>${task.added_by}</strong> • ${time}</div></div><button class="delete-btn" onclick="window.deleteTask(${task.id})">×</button></div><div class="progress-bar"><div class="progress-fill" style="width: ${percent}%"></div></div><div style="font-size: 12px; color: #666; margin: 8px 0;">${task.confirmed_by?.length || 0}/${totalUsers} bestätigt</div>${(task.confirmed_by || []).length > 0 ? `<div style="margin-bottom: 12px;">${(task.confirmed_by || []).map(u => `<span class="badge">${u}</span>`).join('')}</div>` : ''}<button class="confirm-btn ${isConfirmed ? 'confirmed' : ''}" onclick="window.confirmTask(${task.id}, ${JSON.stringify(task).replace(/"/g, '&quot;')})">${isConfirmed ? '✓ Bestätigt' : 'Bestätigen'}</button>`;
+                listEl.appendChild(item);
+            });
+        }
+        window.addEventListener('load', () => {
+            const url = localStorage.getItem('taskListUrl');
+            const key = localStorage.getItem('taskListKey');
+            if (url && key) {
+                document.getElementById('supaUrl').value = url;
+                document.getElementById('supaKey').value = key;
+                connect();
+            }
+        });
+        window.confirmTask = confirmTask;
+        window.deleteTask = deleteTask;
+    </script>
+</body>
+</html>
