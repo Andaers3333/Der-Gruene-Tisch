@@ -1,10 +1,11 @@
+cat > index.html << 'EOF'
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemeinsame Task-Liste</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.0"></script>
     <style>
         * { box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin: 0; padding: 20px; min-height: 100vh; }
@@ -89,7 +90,11 @@
             }
             try {
                 const { createClient } = window.supabase;
-                supabaseClient = createClient(url, key);
+                supabaseClient = createClient(url, key, {
+                    db: { schema: 'public' },
+                    auth: { persistSession: false },
+                    global: { headers: { 'x-application-name': 'task-list' } }
+                });
                 document.getElementById('setupBox').style.display = 'none';
                 document.getElementById('appBox').style.display = 'block';
                 document.getElementById('userName').value = currentUser;
@@ -106,65 +111,39 @@
             const addBtn = document.getElementById('addBtn');
             userInput.addEventListener('change', () => {
                 currentUser = userInput.value.trim();
-                if (currentUser) {
-                    localStorage.setItem('taskListUser', currentUser);
-                }
+                if (currentUser) localStorage.setItem('taskListUser', currentUser);
             });
             addBtn.addEventListener('click', addTask);
-            taskInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') addTask();
-            });
+            taskInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addTask(); });
             loadTasks();
-            setInterval(loadTasks, 2000);
+            setInterval(loadTasks, 3000);
         }
         async function addTask() {
             const text = document.getElementById('taskInput').value.trim();
-            if (!text) return;
-            if (!currentUser) {
-                alert('Gib deinen Namen ein');
-                return;
-            }
+            if (!text || !currentUser) return;
             try {
-                const { error } = await supabaseClient.from('tasks').insert({
-                    text: text,
-                    added_by: currentUser,
-                    confirmed_by: []
-                });
-                if (error) throw error;
+                await supabaseClient.from('tasks').insert({ text, added_by: currentUser, confirmed_by: [] });
                 document.getElementById('taskInput').value = '';
                 loadTasks();
             } catch (error) {
-                alert('Fehler: ' + error.message);
+                console.error(error);
             }
         }
-        async function confirmTask(id, task) {
-            if (!currentUser) {
-                alert('Gib deinen Namen ein');
-                return;
-            }
+        async function confirmTask(id, confirmed_by) {
+            if (!currentUser) return;
             try {
-                let confirmed = task.confirmed_by || [];
-                const idx = confirmed.indexOf(currentUser);
-                if (idx === -1) {
-                    confirmed.push(currentUser);
-                } else {
-                    confirmed.splice(idx, 1);
-                }
-                const { error } = await supabaseClient.from('tasks').update({ confirmed_by: confirmed }).eq('id', id);
-                if (error) throw error;
+                const idx = confirmed_by.indexOf(currentUser);
+                if (idx === -1) confirmed_by.push(currentUser);
+                else confirmed_by.splice(idx, 1);
+                await supabaseClient.from('tasks').update({ confirmed_by }).eq('id', id);
                 loadTasks();
-            } catch (error) {
-                alert('Fehler: ' + error.message);
-            }
+            } catch (error) { console.error(error); }
         }
         async function deleteTask(id) {
             try {
-                const { error } = await supabaseClient.from('tasks').delete().eq('id', id);
-                if (error) throw error;
+                await supabaseClient.from('tasks').delete().eq('id', id);
                 loadTasks();
-            } catch (error) {
-                alert('Fehler: ' + error.message);
-            }
+            } catch (error) { console.error(error); }
         }
         async function loadTasks() {
             if (!supabaseClient) return;
@@ -184,10 +163,7 @@
             const listEl = document.getElementById('taskList');
             const emptyEl = document.getElementById('emptyMsg');
             listEl.innerHTML = '';
-            if (tasks.length === 0) {
-                emptyEl.style.display = 'block';
-                return;
-            }
+            if (tasks.length === 0) { emptyEl.style.display = 'block'; return; }
             emptyEl.style.display = 'none';
             const allUsers = new Set();
             tasks.forEach(t => {
@@ -201,7 +177,8 @@
                 const time = new Date(task.added_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
                 const item = document.createElement('div');
                 item.className = 'task-item';
-                item.innerHTML = `<div class="task-header"><div><div class="task-text">${task.text}</div><div class="task-meta">von <strong>${task.added_by}</strong> • ${time}</div></div><button class="delete-btn" onclick="window.deleteTask(${task.id})">×</button></div><div class="progress-bar"><div class="progress-fill" style="width: ${percent}%"></div></div><div style="font-size: 12px; color: #666; margin: 8px 0;">${task.confirmed_by?.length || 0}/${totalUsers} bestätigt</div>${(task.confirmed_by || []).length > 0 ? `<div style="margin-bottom: 12px;">${(task.confirmed_by || []).map(u => `<span class="badge">${u}</span>`).join('')}</div>` : ''}<button class="confirm-btn ${isConfirmed ? 'confirmed' : ''}" onclick="window.confirmTask(${task.id}, ${JSON.stringify(task).replace(/"/g, '&quot;')})">${isConfirmed ? '✓ Bestätigt' : 'Bestätigen'}</button>`;
+                item.innerHTML = `<div class="task-header"><div><div class="task-text">${task.text}</div><div class="task-meta">von <strong>${task.added_by}</strong> • ${time}</div></div><button class="delete-btn" onclick="window.deleteTask(${task.id})">×</button></div><div class="progress-bar"><div class="progress-fill" style="width: ${percent}%"></div></div><div style="font-size: 12px; color: #666; margin: 8px 0;">${task.confirmed_by?.length || 0}/${totalUsers} bestätigt</div>${(task.confirmed_by || []).length > 0 ? `<div style="margin-bottom: 12px;">${(task.confirmed_by || []).map(u => `<span class="badge">${u}</span>`).join('')}</div>` : ''}<button class="confirm-btn ${isConfirmed ? 'confirmed' : ''}" onclick="window.confirmTask(${task.id}, ${JSON.stringify(task.confirmed_by || [])})">
+                ${isConfirmed ? '✓ Bestätigt' : 'Bestätigen'}</button>`;
                 listEl.appendChild(item);
             });
         }
@@ -219,3 +196,4 @@
     </script>
 </body>
 </html>
+EOF
